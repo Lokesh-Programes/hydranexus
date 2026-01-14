@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Particle Hand Catch</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #111; font-family: 'Courier New', monospace; }
+        
+        /* Start Screen */
+        #start-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.95); z-index: 10;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; color: #00ff88;
+        }
+        button {
+            padding: 15px 30px; font-size: 20px; cursor: pointer;
+            background: #00ff88; border: none; border-radius: 4px; color: #000; font-weight: bold;
+            box-shadow: 0 0 20px #00ff88;
+        }
+        
+        /* HUD */
+        #ui {
+            position: absolute; top: 20px; left: 20px; z-index: 5;
+            color: #00ff88; background: rgba(0, 0, 0, 0.5); padding: 15px;
+            pointer-events: none; border: 1px solid #00ff88;
+            user-select: none;
+        }
+        .stat { font-size: 14px; margin-bottom: 5px; }
+        .highlight { color: #fff; font-weight: bold; }
+        hr { border-color: #004422; }
+        
+        video { display: none; }
+    </style>
+</head>
+<body>
+
+    <div id="start-screen">
+        <h1>ENERGY HAND INTERFACE</h1>
+        <button onclick="startSystem()">INITIALIZE SYSTEM</button>
+        <p>(Requires Webcam Access)</p>
+    </div>
+
+    <div id="ui">
+        <div class="stat">HAND TRACKING: <span id="hand-stat" style="color:red">OFFLINE</span></div>
+        <div class="stat">INTERACTION: <span id="action-stat" class="highlight">IDLE</span></div>
+        <hr>
+        <p>1. Align <b>Particle Hand</b> with Ball</p>
+        <p>2. Watch for <b>Tether Connection</b></p>
+        <p>3. <b>FIST</b> to Grab / <b>OPEN</b> to Throw</p>
+        <p>[R] to Reset Ball</p>
+    </div>
+
+    <video id="input_video" playsinline></video>
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.146.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+    <script>
+        let isSystemRunning = false;
+
+        // --- CONFIG ---
+        const CONFIG = {
+            sensitivity: 25,     // Hand movement scale
+            magnetRange: 5.0,    // Distance to connect tether
+            throwPower: 1.8,
+            particleCount: 2000  // Number of particles in hand
+        };
+
+        // --- SCENE SETUP ---
+        const scene = new THREE.Scene();
+        // Fog to hide distance and make glow pop
+        scene.fog = new THREE.FogExp2(0x111111, 0.02); 
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 100);
+        camera.position.set(0, 2, 25);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setClearColor(scene.fog.color);
+        document.body.appendChild(renderer.domElement);
+
+        // Lights
+        const ambient = new THREE.AmbientLight(0x333333);
+        scene.add(ambient);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(0, 10, 10);
+        scene.add(dirLight);
+
+        // --- OBJECTS ---
+        
+        // 1. THE BALL (Physics Object)
+        const ballMat = new THREE.MeshPhongMaterial({ 
+            color: 0xffaa00, emissive: 0x552200, shininess: 50 
+        });
+        const ball = new THREE.Mesh(new THREE.SphereGeometry(2, 32, 32), ballMat);
+        scene.add(ball);
+
+        // 2. PARTICLE HAND (Visuals)
+        const pGeo = new THREE.BufferGeometry();
+        const pPos = new Float32Array(CONFIG.particleCount * 3);
+        // Init particles far away
+        for(let i=0; i<CONFIG.particleCount*3; i++) pPos[i] = (Math.random()-0.5)*100;
+        pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+        
+        const pMat = new THREE.PointsMaterial({
+            color: 0x00ff88,
+            size: 0.15,
+            blending: THREE.AdditiveBlending, // Makes them glow when overlapping
+            transparent: true,
+            opacity: 0.8
+        });
+        const particleHand = new THREE.Points(pGeo, pMat);
+        scene.add(particleHand);
+
+        // 3. ENERGY TETHER (Connection Line)
+        const lineGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+        const lineMat = new THREE.LineBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0.5 });
+        const tether = new THREE.Line(lineGeo, lineMat);
+        scene.add(tether);
+
+        // --- STATE ---
+        let ballState = { pos: new THREE.Vector3(0,0,0), vel: new THREE.Vector3(0,0,0), held: false };
+        let handState = { 
+            pos: new THREE.Vector3(0,0,0), // Physics center of hand
+            prev: new THREE.Vector3(0,0,0), 
+            vel: new THREE.Vector3(0,0,0), 
+            closed: false, 
+            visible: false,
+            landmarks: null // Store raw data for particles
+        };
+
+        // --- SYSTEM START ---
+        async function startSystem() {
+            document.getElementById('start-screen').style.display = 'none';
+            const video = document.getElementById('input_video');
+            const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+            hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+            hands.onResults(onResults);
+            const cam = new Camera(video, { onFrame: async () => { await hands.send({image: video}); }, width: 640, height: 480 });
+            await cam.start();
+            isSystemRunning = true;
+        }
+
+        // --- AI PROCESSING ---
+        function onResults(results) {
+            const stat = document.getElementById('hand-stat');
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                handState.visible = true;
+                handState.landmarks = results.multiHandLandmarks[0]; // Save for particles
+                stat.innerText = "ONLINE"; stat.style.color = "#00ff88";
+
+                const lm = handState.landmarks;
+                
+                // 1. Calculate Physics Center (Middle Knuckle - Landmark 9)
+                handState.prev.copy(handState.pos);
+                // Smooth Lerp movement
+                handState.pos.x += ((0.5 - lm[9].x) * CONFIG.sensitivity - handState.pos.x) * 0.3;
+                handState.pos.y += ((0.5 - lm[9].y) * CONFIG.sensitivity - handState.pos.y) * 0.3;
+                // Flatten Z slightly for easier catching
+                handState.pos.z += (-lm[9].z * 10 - handState.pos.z) * 0.3;
+
+                // 2. Velocity
+                handState.vel.subVectors(handState.pos, handState.prev).multiplyScalar(CONFIG.throwPower);
+
+                // 3. Fist Detection (Wrist to Middle Tip)
+                const dist = Math.sqrt((lm[0].x-lm[12].x)**2 + (lm[0].y-lm[12].y)**2);
+                handState.closed = dist < 0.15; 
+            } else {
+                handState.visible = false;
+                stat.innerText = "OFFLINE"; stat.style.color = "red";
+            }
+        }
+
+        // --- MAIN LOOP ---
+        let time = 0;
+        function animate() {
+            requestAnimationFrame(animate);
+            if (!isSystemRunning) return;
+            time += 0.05;
+
+            // --- A. PARTICLE HAND ANIMATION ---
+            const pPositions = pGeo.attributes.position.array;
+            if (handState.visible && handState.landmarks) {
+                particleHand.visible = true;
+                // Change color based on grip
+                pMat.color.setHex(handState.closed ? 0x00ff00 : 0x00ffcc);
+
+                for(let i=0; i<CONFIG.particleCount; i++) {
+                    const i3 = i*3;
+                    // Map particles to the 21 hand landmarks
+                    const lm = handState.landmarks[i % 21]; 
+                    
+                    // Convert LM to world space + add noise for energy effect
+                    const tx = (0.5 - lm.x) * CONFIG.sensitivity + (Math.random()-0.5)*0.5;
+                    const ty = (0.5 - lm.y) * CONFIG.sensitivity + (Math.random()-0.5)*0.5;
+                    const tz = -lm.z * 10 + (Math.random()-0.5)*0.5;
+
+                    // Lerp particles to target positions
+                    pPositions[i3]   += (tx - pPositions[i3]) * 0.2;
+                    pPositions[i3+1] += (ty - pPositions[i3+1]) * 0.2;
+                    pPositions[i3+2] += (tz - pPositions[i3+2]) * 0.2;
+                }
+            } else {
+                // Dissipate hand if lost tracking
+                if(particleHand.visible) {
+                     for(let i=0; i<CONFIG.particleCount*3; i++) pPositions[i] *= 1.05; // Explode outwards
+                     if(pPositions[0] > 100) particleHand.visible = false;
+                }
+            }
+            pGeo.attributes.position.needsUpdate = true;
+
+
+            // --- B. PHYSICS & INTERACTION ---
+            const dist = handState.pos.distanceTo(ballState.pos);
+            const actionStat = document.getElementById('action-stat');
+
+            // Tether Visuals
+            if (handState.visible && dist < CONFIG.magnetRange) {
+                tether.visible = true;
+                const tPos = tether.geometry.attributes.position.array;
+                tPos[0] = handState.pos.x; tPos[1] = handState.pos.y; tPos[2] = handState.pos.z;
+                tPos[3] = ballState.pos.x; tPos[4] = ballState.pos.y; tPos[5] = ballState.pos.z;
+                tether.geometry.attributes.position.needsUpdate = true;
+                // Pulse opacity
+                tether.material.opacity = 0.5 + Math.sin(time)*0.3;
+            } else {
+                tether.visible = false;
+            }
+
+            if (ballState.held) {
+                // HELD STATE
+                actionStat.innerText = "GRIPPING"; actionStat.style.color = "#00ff00";
+                ballMat.emissive.setHex(0x005500); // Green glow
+
+                ballState.pos.lerp(handState.pos, 0.3); // Snap to hand center
+                ballState.vel.set(0,0,0);
+
+                if (!handState.closed) {
+                    ballState.held = false;
+                    ballState.vel.copy(handState.vel); // Throw
+                }
+            } else {
+                // FREE STATE
+                actionStat.innerText = "AIRBORNE"; actionStat.style.color = "#fff";
+                ballMat.emissive.setHex(0x552200); // Orange glow
+
+                ballState.vel.y += -0.015; // Gravity
+                ballState.pos.add(ballState.vel);
+
+                // Simple Floor Bounce
+                if (ballState.pos.y < -10) {
+                    ballState.pos.y = -10; ballState.vel.y *= -0.8; ballState.vel.x *= 0.98;
+                }
+
+                // Check Grab Condition
+                if (handState.visible && handState.closed && dist < CONFIG.magnetRange) {
+                    ballState.held = true;
+                }
+            }
+
+            ball.position.copy(ballState.pos);
+            ball.rotation.x += ballState.vel.z * 0.05;
+            ball.rotation.z -= ballState.vel.x * 0.05;
+
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        window.addEventListener('keydown', (e) => {
+            if(e.key.toLowerCase() === 'r') {
+                ballState.pos.set(0,0,0); ballState.vel.set(0,0,0); ballState.held = false;
+            }
+        });
+
+        animate();
+    </script>
+</body>
+</html>

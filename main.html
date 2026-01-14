@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Valdora Ecosystem | Unified Application Hub</title>
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Space+Grotesk:wght@300;500;700&display=swap"
+        rel="stylesheet">
+
+    <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+
+    <!-- Background Elements -->
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+
+    <!-- Navigation -->
+    <header id="header">
+        <div class="container nav-flex">
+            <a href="#" class="logo">
+                <!-- Fallback mechanism for Logo -->
+                <img src="logi4ref.png" alt="Logo"
+                    onerror="this.style.display='none'; document.querySelector('.logo-fallback-icon').style.display='inline-block'">
+                <i class="fas fa-cube logo-fallback-icon"></i>
+                VALDORA
+            </a>
+
+            <nav>
+                <ul class="nav-links" id="nav-links">
+                    <li><a href="#home" class="active">Home</a></li>
+                    <li><a href="#ecosystem">Ecosystem</a></li>
+                    <li><a href="#features">Features</a></li>
+                    <li><a href="#contact">Contact</a></li>
+                </ul>
+            </nav>
+
+            <button class="mobile-toggle" onclick="toggleMenu()">
+                <i class="fas fa-bars"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main>
+        <!-- Hero Section -->
+        <section class="hero" id="home">
+            <div class="container">
+                <div class="hero-content">
+                    <span class="badge">Next Gen Ecosystem</span>
+                    <h1>
+                        <span class="reveal-text">The Central Hub for</span> <br>
+                        <span class="gradient-text reveal-text delay-200">Modern Web Solutions</span>
+                    </h1>
+                    <p class="subtitle">Access our complete suite of trade, logistics, and analytics applications.
+                        Secure, scalable, and beautifully integrated.</p>
+
+                    <div class="hero-actions">
+                        <a href="#ecosystem" class="btn btn-primary">Explore Apps</a>
+                    </div>
+
+                    <div class="hero-stats">
+                        <div class="stat-item">
+                            <h4 class="gradient-text">12+</h4>
+                            <span>Integrated Apps</span>
+                        </div>
+                        <div class="stat-item">
+                            <h4 class="gradient-text">99.9%</h4>
+                            <span>Uptime Guarantee</span>
+                        </div>
+                        <div class="stat-item">
+                            <h4 class="gradient-text">24/7</h4>
+                            <span>Global Support</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Apps Ecosystem Section -->
+        <section class="apps-section" id="ecosystem">
+            <div class="container">
+                <div class="section-header">
+                    <div>
+                        <h2>Our <span class="gradient-text">Applications</span></h2>
+                        <p style="color: var(--text-muted);">One account, infinite possibilities across our network.</p>
+                    </div>
+                    <a href="#" class="btn btn-primary" style="padding: 10px 24px; font-size: 0.85rem;">View All
+                        Projects</a>
+                </div>
+
+                <div class="apps-grid">
+                    <!-- App 1: Green Theme -->
+                    <div class="app-card">
+                        <div class="app-icon icon-green">
+                            <i class="fas fa-network-wired"></i>
+                        </div>
+                        <h3>Valdora Logistics</h3>
+                        <p>Real-time fleet tracking and supply chain optimization dashboard powered by AI prediction
+                            models.</p>
+                        <a href="#" class="app-link link-green">Launch App <i class="fas fa-arrow-right"></i></a>
+                    </div>
+
+                    <!-- App 2: Blue Theme -->
+                    <div class="app-card">
+                        <div class="app-icon icon-blue">
+                            <i class="fas fa-chart-pie"></i>
+                        </div>
+                        <h3>Trade Analytics</h3>
+                        <p>Deep data visualization for B2B market trends. Import export statistics in a single glass
+                            view.</p>
+                        <a href="#" class="app-link link-blue">View Dashboard <i class="fas fa-arrow-right"></i></a>
+                    </div>
+
+                    <!-- App 3: Violet Theme -->
+                    <div class="app-card">
+                        <div class="app-icon icon-violet">
+                            <i class="fas fa-fingerprint"></i>
+                        </div>
+                        <h3>Secure ID</h3>
+                        <p>Centralized authentication gateway managing access and permissions across all our platforms.
+                        </p>
+                        <a href="#" class="app-link link-violet">Manage ID <i class="fas fa-arrow-right"></i></a>
+                    </div>
+
+                    <!-- App 4: Blue/Green Mix -->
+                    <div class="app-card">
+                        <div class="app-icon icon-blue">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                        </div>
+                        <h3>Cloud Storage</h3>
+                        <p>Enterprise-grade file management with encrypted sharing capabilities for global trade
+                            documents.</p>
+                        <a href="#" class="app-link link-blue">Access Files <i class="fas fa-arrow-right"></i></a>
+                    </div>
+
+                    <!-- App 5: Violet/Red Mix -->
+                    <div class="app-card">
+                        <div class="app-icon icon-violet">
+                            <i class="fas fa-robot"></i>
+                        </div>
+                        <h3>Valdora AI</h3>
+                        <p>Automated customer support and trade compliance checking bot for instant query resolution.
+                        </p>
+                        <a href="#" class="app-link link-violet">Chat Now <i class="fas fa-arrow-right"></i></a>
+                    </div>
+
+                    <!-- App 6: Green -->
+                    <div class="app-card">
+                        <div class="app-icon icon-green">
+                            <i class="fas fa-leaf"></i>
+                        </div>
+                        <h3>Eco Trace</h3>
+                        <p>Sustainability tracking to monitor carbon footprint across your entire supply chain
+                            logistics.</p>
+                        <a href="#" class="app-link link-green">Track Impact <i class="fas fa-arrow-right"></i></a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Features Grid -->
+        <section class="features-section" id="features">
+            <div class="container">
+                <div class="features-grid">
+                    <div class="feature-item">
+                        <i class="fas fa-bolt"></i>
+                        <h3>High Performance</h3>
+                        <p style="color: var(--text-muted); margin-top: 15px;">Optimized specifically for speed with
+                            lightweight code and instant loading assets.</p>
+                    </div>
+                    <div class="feature-item">
+                        <i class="fas fa-shield-alt"></i>
+                        <h3>Enterprise Security</h3>
+                        <p style="color: var(--text-muted); margin-top: 15px;">Bank-grade encryption protecting all data
+                            flowing between your applications.</p>
+                    </div>
+                    <div class="feature-item">
+                        <i class="fas fa-mobile-alt"></i>
+                        <h3>Mobile First</h3>
+                        <p style="color: var(--text-muted); margin-top: 15px;">Responsive glassmorphism design that
+                            looks stunning on every device.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer id="contact">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <h4>VALDORA</h4>
+                    <p>Connecting the digital dots for a smarter, faster, and more secure global trade ecosystem.</p>
+                </div>
+                <div class="footer-col">
+                    <h5>Platform</h5>
+                    <ul>
+                        <li><a href="#">Overview</a></li>
+                        <li><a href="#">Integration</a></li>
+                        <li><a href="#">Pricing</a></li>
+                        <li><a href="#">API Docs</a></li>
+                    </ul>
+                </div>
+                <div class="footer-col">
+                    <h5>Company</h5>
+                    <ul>
+                        <li><a href="#">About Us</a></li>
+                        <li><a href="#">Careers</a></li>
+                        <li><a href="#">Blog</a></li>
+                        <li><a href="#">Contact</a></li>
+                    </ul>
+                </div>
+                <div class="footer-col">
+                    <h5>Connect</h5>
+                    <ul>
+                        <li><a href="#">Twitter / X</a></li>
+                        <li><a href="#">LinkedIn</a></li>
+                        <li><a href="#">GitHub</a></li>
+                        <li><a href="#">Discord</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="copyright">
+                <p>&copy; 2024 Valdora Global Ecosystem. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+
+</html>

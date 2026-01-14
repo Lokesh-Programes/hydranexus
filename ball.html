@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Hybrid: Particles & Physics</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
+        #ui {
+            position: absolute; top: 20px; left: 20px;
+            color: #00ffcc; pointer-events: none;
+            background: rgba(0,0,0,0.8); padding: 15px; border: 1px solid #00ffcc;
+            user-select: none;
+        }
+        h2 { margin: 0 0 10px 0; font-size: 16px; border-bottom: 1px solid #444; padding-bottom: 5px; }
+        .stat { font-size: 12px; margin: 5px 0; color: #ccc; }
+        .highlight { color: #fff; font-weight: bold; }
+        video { display: none; }
+    </style>
+</head>
+<body>
+
+    <div id="ui">
+        <h2>Hybrid System</h2>
+        <p class="stat">Ball State: <span id="ballState" style="color:#ffaa00">AIRBORNE</span></p>
+        <p class="stat">Hand Speed: <span id="speedStat">0.0</span></p>
+        <hr style="border-color: #333">
+        <p class="stat">✊ <b>Fist:</b> Catch Ball</p>
+        <p class="stat">🖐 <b>Open:</b> Throw Ball / Morph</p>
+        <p class="stat">👇 <b>'R':</b> Reset Ball</p>
+    </div>
+
+    <video id="input_video" crossorigin="anonymous"></video>
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.146.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/three@0.146.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.146.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.146.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.146.0/examples/js/shaders/CopyShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.146.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.146.0/examples/js/postprocessing/ShaderPass.js"></script>
+
+    <script>
+        // --- CONFIG ---
+        const PARTICLE_COUNT = 8000; // Optimized for dual rendering
+        const GRAVITY = -0.015;
+        const BOUNCE = 0.8;
+        const THROW_FORCE = 1.2;
+
+        // --- 1. SCENE & RENDERER ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 100);
+        camera.position.z = 15;
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+        document.body.appendChild(renderer.domElement);
+
+        // --- 2. GLOW (BLOOM) ---
+        const renderScene = new THREE.RenderPass(scene, camera);
+        const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+        bloomPass.threshold = 0.1;
+        bloomPass.strength = 1.2;
+        bloomPass.radius = 0.5;
+
+        const composer = new THREE.EffectComposer(renderer);
+        composer.addPass(renderScene);
+        composer.addPass(bloomPass);
+
+        // --- 3. OBJECTS ---
+        
+        // A. THE BALL (Physics Object)
+        const ballGeo = new THREE.IcosahedronGeometry(1.5, 2);
+        const ballMat = new THREE.MeshBasicMaterial({ color: 0xffaa00, wireframe: true });
+        const ball = new THREE.Mesh(ballGeo, ballMat);
+        scene.add(ball);
+        
+        // Ball Inner Glow
+        const ballCore = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 8), new THREE.MeshBasicMaterial({ color: 0xff4400 }));
+        ball.add(ballCore);
+
+        // B. THE PARTICLES (Face/Hand Morph)
+        const pGeo = new THREE.BufferGeometry();
+        const positions = new Float32Array(PARTICLE_COUNT * 3);
+        const targets = new Float32Array(PARTICLE_COUNT * 3);
+        const colors = new Float32Array(PARTICLE_COUNT * 3);
+
+        for(let i=0; i<PARTICLE_COUNT; i++) {
+            const i3 = i*3;
+            positions[i3] = (Math.random()-0.5)*30;
+            positions[i3+1] = (Math.random()-0.5)*30;
+            positions[i3+2] = (Math.random()-0.5)*10;
+            targets[i3] = positions[i3];
+            colors[i3] = 0; colors[i3+1] = 1; colors[i3+2] = 1; // Cyan
+        }
+        pGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        pGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        
+        const pMat = new THREE.PointsMaterial({ size: 0.1, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true });
+        const particles = new THREE.Points(pGeo, pMat);
+        scene.add(particles);
+
+        // --- 4. STATE & PHYSICS ---
+        let ballState = { pos: new THREE.Vector3(0,0,0), vel: new THREE.Vector3(0,0,0), isHeld: false };
+        let handState = { pos: new THREE.Vector3(0,0,0), prev: new THREE.Vector3(0,0,0), vel: new THREE.Vector3(0,0,0), closed: false };
+        
+        let faceLM = null;
+        let handLM = null;
+
+        // --- 5. AI SETUP (STAGGERED) ---
+        const video = document.getElementById('input_video');
+        
+        const faceMesh = new FaceMesh({locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`});
+        faceMesh.setOptions({maxNumFaces: 1, minDetectionConfidence: 0.5});
+        faceMesh.onResults(res => faceLM = res.multiFaceLandmarks?.[0] || null);
+
+        const hands = new Hands({locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
+        hands.setOptions({maxNumHands: 1, modelComplexity: 0}); // 0 = Fast
+        hands.onResults(res => {
+            if(res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
+                handLM = res.multiHandLandmarks[0];
+                updateHandPhysics(handLM);
+            } else {
+                handLM = null;
+            }
+        });
+
+        // Loop: Alternate Frames
+        let frameCount = 0;
+        const cam = new Camera(video, {
+            onFrame: async () => {
+                frameCount++;
+                if(frameCount % 2 === 0) await faceMesh.send({image: video});
+                else await hands.send({image: video});
+            },
+            width: 640, height: 480
+        });
+        cam.start();
+
+        // --- 6. LOGIC ---
+        function updateHandPhysics(lm) {
+            // Hand Center (Middle Knuckle)
+            const x = (0.5 - lm[9].x) * 20;
+            const y = (0.5 - lm[9].y) * 15;
+            const z = -lm[9].z * 20;
+
+            handState.prev.copy(handState.pos);
+            handState.pos.set(x, y, z);
+            
+            // Calc Velocity
+            handState.vel.subVectors(handState.pos, handState.prev).multiplyScalar(THROW_FORCE);
+            
+            // Check Fist (Wrist to Middle Tip)
+            const d = Math.sqrt(Math.pow(lm[0].x - lm[12].x, 2) + Math.pow(lm[0].y - lm[12].y, 2));
+            handState.closed = d < 0.15;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // --- A. PHYSICS ENGINE ---
+            if (ballState.isHeld) {
+                // Ball stuck to hand
+                ballState.pos.copy(handState.pos);
+                ballState.vel.set(0,0,0);
+                
+                // Color change
+                ball.material.color.setHex(0x00ffff); // Cyan (Held)
+                document.getElementById('ballState').innerText = "HELD";
+                document.getElementById('ballState').style.color = "#00ffff";
+
+                // Throw?
+                if (!handState.closed) {
+                    ballState.isHeld = false;
+                    ballState.vel.copy(handState.vel); // Launch
+                }
+            } else {
+                // Airborne
+                ballState.vel.y += GRAVITY;
+                ballState.pos.add(ballState.vel);
+
+                // Floor Bounce
+                if (ballState.pos.y < -10) {
+                    ballState.pos.y = -10;
+                    ballState.vel.y *= -BOUNCE;
+                    ballState.vel.x *= 0.98; // Friction
+                    ballState.vel.z *= 0.98;
+                }
+                // Wall Bounce
+                if (Math.abs(ballState.pos.x) > 18) ballState.vel.x *= -BOUNCE;
+                if (ballState.pos.z < -20 || ballState.pos.z > 5) ballState.vel.z *= -BOUNCE;
+
+                ball.material.color.setHex(0xffaa00); // Orange (Free)
+                document.getElementById('ballState').innerText = "AIRBORNE";
+                document.getElementById('ballState').style.color = "#ffaa00";
+
+                // Catch Check
+                if (handLM && handState.closed) {
+                    if (ballState.pos.distanceTo(handState.pos) < 3.0) {
+                        ballState.isHeld = true;
+                    }
+                }
+            }
+
+            ball.position.copy(ballState.pos);
+            ball.rotation.x += ballState.vel.z * 0.1;
+            ball.rotation.z -= ballState.vel.x * 0.1;
+
+            document.getElementById('speedStat').innerText = handState.vel.length().toFixed(2);
+
+            // --- B. VISUAL PARTICLES ---
+            const pos = pGeo.attributes.position.array;
+            
+            // Determine Mode
+            let mode = 'IDLE';
+            if(faceLM && handLM) mode = 'BOTH';
+            else if(faceLM) mode = 'FACE';
+            else if(handLM) mode = 'HAND';
+
+            for(let i=0; i<PARTICLE_COUNT; i++) {
+                const i3 = i*3;
+                let tx, ty, tz;
+
+                if (mode === 'FACE') {
+                    const lm = faceLM[i % 468];
+                    tx = (0.5 - lm.x) * 20; ty = (0.5 - lm.y) * 15; tz = -lm.z * 20;
+                } 
+                else if (mode === 'HAND') {
+                    const lm = handLM[i % 21];
+                    // Add "volume" to hand
+                    tx = (0.5 - lm.x) * 20 + (Math.random()-0.5)*0.5;
+                    ty = (0.5 - lm.y) * 15 + (Math.random()-0.5)*0.5;
+                    tz = -lm.z * 20;
+                } 
+                else if (mode === 'BOTH') {
+                    if (i < PARTICLE_COUNT/2) { // Face Half
+                        const lm = faceLM[i % 468];
+                        tx = (0.5 - lm.x) * 20; ty = (0.5 - lm.y) * 15; tz = -lm.z * 20;
+                    } else { // Hand Half
+                        const lm = handLM[i % 21];
+                        tx = (0.5 - lm.x) * 20 + (Math.random()-0.5)*0.5;
+                        ty = (0.5 - lm.y) * 15 + (Math.random()-0.5)*0.5;
+                        tz = -lm.z * 20;
+                    }
+                } else {
+                    // IDLE CLOUD
+                    tx = Math.sin(i*0.1 + frameCount*0.01) * 10;
+                    ty = Math.cos(i*0.1 + frameCount*0.01) * 10;
+                    tz = Math.sin(i*0.5) * 5;
+                }
+
+                // Smooth Particle Lerp
+                pos[i3] += (tx - pos[i3]) * 0.15;
+                pos[i3+1] += (ty - pos[i3+1]) * 0.15;
+                pos[i3+2] += (tz - pos[i3+2]) * 0.15;
+            }
+            pGeo.attributes.position.needsUpdate = true;
+
+            composer.render();
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if(e.key.toLowerCase() === 'r') {
+                ballState.pos.set(0,0,0);
+                ballState.vel.set(0,0,0);
+                ballState.isHeld = false;
+            }
+        });
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth/window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
